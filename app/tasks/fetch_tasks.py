@@ -1,13 +1,30 @@
 import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+from concurrent.futures import ThreadPoolExecutor
+import atexit
 
 from app.tasks.celery_app import celery_app
 from app.services.hacker_news_client import hacker_news_client
 from app.services.data_service import data_service
-from app.core.config import cache, get_logger
+from app.core.config import cache, get_logger, SessionLocal
 
 logger = get_logger("celery_tasks")
+
+executor = ThreadPoolExecutor(max_workers=4)  # adjust max_workers based on the number of cores
+
+
+def run_async_in_thread(async_func, *args, **kwargs):
+    """
+    Utility: run async function in sync context using a global thread pool.
+    """
+    return executor.submit(asyncio.run, async_func(*args, **kwargs)).result()
+
+
+# Register shutdown function to ensure the thread pool is closed when the application exits
+@atexit.register
+def shutdown_executor():
+    executor.shutdown(wait=True)
 
 
 @celery_app.task(bind=True, name="app.tasks.fetch_tasks.fetch_top_stories")
@@ -25,14 +42,8 @@ def fetch_top_stories(self, limit: int = 100) -> List[int]:
     logger.info(f"Starting fetch_top_stories task {task_id} with limit={limit}")
 
     try:
-        # Run async function in sync context
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, hacker_news_client.get_top_stories(limit=limit))
-            story_ids = future.result()
-
+        story_ids = run_async_in_thread(hacker_news_client.get_top_stories, limit=limit)
         logger.info(f"Task {task_id} completed: fetched {len(story_ids)} story IDs")
-
         return story_ids
 
     except Exception as e:
@@ -57,14 +68,8 @@ def fetch_item_details(self, item_ids: List[int]) -> List[Dict[str, Any]]:
     logger.info(f"Starting fetch_item_details task {task_id} for {len(item_ids)} items")
 
     try:
-        # Run async function in sync context
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, hacker_news_client.get_items_batch(item_ids))
-            items = future.result()
-
+        items = run_async_in_thread(hacker_news_client.get_items_batch, item_ids)
         logger.info(f"Task {task_id} completed: fetched {len(items)} item details")
-
         return items
 
     except Exception as e:
@@ -97,12 +102,18 @@ def process_and_store_items(
         filtered_items = hacker_news_client.filter_items(items, min_score=min_score, keyword=keyword)
 
         # Store in database
-        stored_item = data_service.store_items(filtered_items)
+        db = SessionLocal()
+        try:
+            stored_item = data_service.store_items(filtered_items, db)
+        finally:
+            db.close()
 
         result = {
             "items_processed": len(items),
             "items_filtered": len(filtered_items),
-            "items_stored": len(filtered_items) if stored_item else 0,
+            "items_stored": stored_item.stored_count if stored_item else 0,
+            "new_items": stored_item.new_items if stored_item else 0,
+            "updated_items": stored_item.updated_items if stored_item else 0,
             "filters_applied": {"min_score": min_score, "keyword": keyword},
         }
 

@@ -1,14 +1,13 @@
 from datetime import datetime, timezone
 from typing import Any
-from fastapi import HTTPException, Request
+import http
+from fastapi import HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from ..config.logging import get_logger
-from app.core.config.settings import settings
 from app.models.common import StandardErrorResponse
 
 logger = get_logger("exceptions")
-IS_PROD = settings.app_env.lower() == "prod"
 
 
 def _utc_now_iso() -> str:
@@ -16,17 +15,15 @@ def _utc_now_iso() -> str:
 
 
 def _default_error_code(status_code: int) -> str:
-    mapping = {
-        400: "BAD_REQUEST",
-        401: "UNAUTHORIZED",
-        403: "FORBIDDEN",
-        404: "NOT_FOUND",
-        405: "METHOD_NOT_ALLOWED",
-        409: "CONFLICT",
-        422: "VALIDATION_ERROR",
-        500: "INTERNAL_ERROR",
-    }
-    return mapping.get(status_code, "UNKNOWN_ERROR")
+    """Get default error code based on HTTP status code."""
+    try:
+        # Use Python's built-in HTTP status descriptions
+        http_status = http.HTTPStatus(status_code)
+        # Convert phrase to uppercase and replace spaces with underscores
+        return http_status.phrase.upper().replace(" ", "_")
+    except ValueError:
+        # Fallback for unknown status codes
+        return "UNKNOWN_ERROR"
 
 
 class AppException(HTTPException):
@@ -42,38 +39,40 @@ class AppException(HTTPException):
 
 class ValidationException(AppException):
     def __init__(self, details: Any = None):
-        super().__init__(400, "VALIDATION_ERROR", "Validation error", details)
+        super().__init__(status.HTTP_400_BAD_REQUEST, "BAD_REQUEST", "Validation error", details)
 
 
 class NotFoundException(AppException):
     def __init__(self, resource: str, resource_id: str):
         super().__init__(
-            404, "NOT_FOUND", f"{resource} not found", details=f"{resource} with ID {resource_id} not found"
+            status.HTTP_404_NOT_FOUND, "NOT_FOUND", f"{resource} not found", 
+            details=f"{resource} with ID {resource_id} not found"
         )
+
 
 class InternalServerException(AppException):
     def __init__(self, details: str | None = None):
-        super().__init__(500, "INTERNAL_ERROR", "Internal server error", details)
+        super().__init__(status.HTTP_500_INTERNAL_SERVER_ERROR, "INTERNAL_SERVER_ERROR", "Internal server error", details)
 
 
 class UnauthorizedException(AppException):
     def __init__(self, details: str | None = None):
-        super().__init__(401, "UNAUTHORIZED", "Unauthorized access", details)
+        super().__init__(status.HTTP_401_UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized access", details)
 
 
 class ForbiddenException(AppException):
     def __init__(self, details: str | None = None):
-        super().__init__(403, "FORBIDDEN", "Access forbidden", details)
+        super().__init__(status.HTTP_403_FORBIDDEN, "FORBIDDEN", "Access forbidden", details)
 
 
 class ConflictException(AppException):
     def __init__(self, resource: str, details: str | None = None):
-        super().__init__(409, "CONFLICT", f"{resource} conflict", details)
+        super().__init__(status.HTTP_409_CONFLICT, "CONFLICT", f"{resource} conflict", details)
 
 
 class RateLimitException(AppException):
     def __init__(self, details: str | None = None):
-        super().__init__(429, "RATE_LIMIT_EXCEEDED", "Rate limit exceeded", details)
+        super().__init__(status.HTTP_429_TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", "Rate limit exceeded", details)
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -89,7 +88,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     
     error_response = StandardErrorResponse(
         error=error_message,
-        error_code=error_code,
+        error_code=error_code,  
         details=error_details,
         timestamp=_utc_now_iso(),
         path=request.url.path,
@@ -107,7 +106,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     """Handle validation exceptions with standardized response format."""
     error_response = StandardErrorResponse(
         error="Validation error",
-        error_code="VALIDATION_ERROR",
+        error_code="UNPROCESSABLE_ENTITY",
         details=exc.errors(),
         timestamp=_utc_now_iso(),
         path=request.url.path,
@@ -115,7 +114,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
     
     return JSONResponse(
-        status_code=422,  # Use 422 for validation errors (RFC 4918)
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,  # Use 422 for validation errors (RFC 4918)
         content=error_response.model_dump()
     )
 
@@ -127,15 +126,15 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     
     error_response = StandardErrorResponse(
         error="Internal server error",
-        error_code="INTERNAL_ERROR",
-        details=None if IS_PROD else str(exc),
+        error_code="INTERNAL_SERVER_ERROR",
+        details=str(exc),
         timestamp=_utc_now_iso(),
         path=request.url.path,
         method=request.method
     )
-    
+      
     return JSONResponse(
-        status_code=500,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response.model_dump()
     )
 

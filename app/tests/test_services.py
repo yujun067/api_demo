@@ -1,49 +1,21 @@
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from sqlalchemy.orm import Session
 from app.services.data_service import DataService
 from app.services.hacker_news_client import HackerNewsAPIClient
-from app.models.database import HackerNewsItem
-from app.models.schemas import HackerNewsItemResponse
+from app.models.orm import HackerNewsItem
+from app.models.api import StoreItemsResponse
 
 
 class TestDataService:
     """Test DataService with fake database and mocked external dependencies."""
     
-    def test_store_items_new_items(self, db_session):
+    def test_store_items_new_items(self, fake_data_service, db_session, sample_hacker_news_items):
         """Test storing new items in database."""
-        service = DataService()
+        service = fake_data_service
         
-        items = [
-            {
-                "id": 1,
-                "title": "Test Story 1",
-                "url": "https://example.com/1",
-                "score": 100,
-                "author": "testuser1",
-                "timestamp": 1640995200,
-                "descendants": 10,
-                "type": "story",
-                "text": None
-            },
-            {
-                "id": 2,
-                "title": "Test Story 2",
-                "url": "https://example.com/2",
-                "score": 200,
-                "author": "testuser2",
-                "timestamp": 1640995300,
-                "descendants": 20,
-                "type": "story",
-                "text": None
-            }
-        ]
+        items = sample_hacker_news_items[:2]  # Use first 2 items from fixture
         
-        # Mock the database session
-        with patch('app.services.data_service.get_db_session') as mock_get_session:
-            mock_get_session.return_value.__enter__.return_value = db_session
-            
-            result = service.store_items(items)
+        result = service.store_items(items, db_session)
         
         # Verify items were stored
         stored_items = db_session.query(HackerNewsItem).all()
@@ -54,12 +26,14 @@ class TestDataService:
         assert stored_items[1].title == "Test Story 2"
         
         # Verify return value
-        assert isinstance(result, HackerNewsItemResponse)
-        assert result.id == 1
+        assert isinstance(result, StoreItemsResponse)
+        assert result.stored_count == 2
+        assert result.new_items == 2
+        assert result.updated_items == 0
     
-    def test_store_items_existing_items_update(self, db_session):
+    def test_store_items_existing_items_update(self, fake_data_service, db_session):
         """Test storing items that already exist (should update)."""
-        service = DataService()
+        service = fake_data_service
         
         # Create existing item
         existing_item = HackerNewsItem(
@@ -91,11 +65,7 @@ class TestDataService:
             }
         ]
         
-        # Mock the database session
-        with patch('app.services.data_service.get_db_session') as mock_get_session:
-            mock_get_session.return_value.__enter__.return_value = db_session
-            
-            result = service.store_items(items)
+        result = service.store_items(items, db_session)
         
         # Verify item was updated
         updated_item = db_session.query(HackerNewsItem).filter_by(id=1).first()
@@ -105,12 +75,14 @@ class TestDataService:
         assert updated_item.author == "newuser"
         
         # Verify return value
-        assert isinstance(result, HackerNewsItemResponse)
-        assert result.id == 1
+        assert isinstance(result, StoreItemsResponse)
+        assert result.stored_count == 1
+        assert result.new_items == 0
+        assert result.updated_items == 1
     
-    def test_store_items_existing_items_no_changes(self, db_session):
+    def test_store_items_existing_items_no_changes(self, fake_data_service, db_session):
         """Test storing items that exist but haven't changed."""
-        service = DataService()
+        service = fake_data_service
         
         # Create existing item
         existing_item = HackerNewsItem(
@@ -142,40 +114,37 @@ class TestDataService:
             }
         ]
         
-        # Mock the database session
-        with patch('app.services.data_service.get_db_session') as mock_get_session:
-            mock_get_session.return_value.__enter__.return_value = db_session
-            
-            result = service.store_items(items)
+        result = service.store_items(items, db_session)
         
         # Verify item wasn't changed
         item = db_session.query(HackerNewsItem).filter_by(id=1).first()
         assert item.title == "Test Title"
         
         # Verify return value
-        assert isinstance(result, HackerNewsItemResponse)
-        assert result.id == 1
+        assert isinstance(result, StoreItemsResponse)
+        assert result.stored_count == 0
+        assert result.new_items == 0
+        assert result.updated_items == 0
     
-    def test_store_items_empty_list(self, db_session):
+    def test_store_items_empty_list(self, fake_data_service, db_session):
         """Test storing empty list of items."""
-        service = DataService()
+        service = fake_data_service
         
-        # Mock the database session
-        with patch('app.services.data_service.get_db_session') as mock_get_session:
-            mock_get_session.return_value.__enter__.return_value = db_session
-            
-            result = service.store_items([])
+        result = service.store_items([], db_session)
         
         # Verify no items were stored
         stored_items = db_session.query(HackerNewsItem).all()
         assert len(stored_items) == 0
         
         # Verify return value
-        assert result is None
+        assert isinstance(result, StoreItemsResponse)
+        assert result.stored_count == 0
+        assert result.new_items == 0
+        assert result.updated_items == 0
     
-    def test_store_items_database_error(self, db_session):
+    def test_store_items_database_error(self, fake_data_service, db_session):
         """Test handling database errors during storage."""
-        service = DataService()
+        service = fake_data_service
         
         items = [
             {
@@ -189,17 +158,15 @@ class TestDataService:
         ]
         
         # Mock the database session to raise an exception
-        with patch('app.services.data_service.get_db_session') as mock_get_session:
-            mock_session = MagicMock()
-            mock_session.commit.side_effect = Exception("Database error")
-            mock_get_session.return_value.__enter__.return_value = mock_session
+        with patch.object(db_session, 'commit') as mock_commit:
+            mock_commit.side_effect = Exception("Database error")
             
             with pytest.raises(Exception, match="Database error"):
-                service.store_items(items)
+                service.store_items(items, db_session)
     
-    def test_get_items_query_basic(self, db_session):
+    def test_get_items_query_basic(self, fake_data_service, db_session):
         """Test building basic query without filters."""
-        service = DataService()
+        service = fake_data_service
         
         # Add some test data
         items = [
@@ -210,20 +177,17 @@ class TestDataService:
             db_session.add(item)
         db_session.commit()
         
-        # Mock SessionLocal
-        with patch('app.services.data_service.SessionLocal') as mock_session_local:
-            mock_session_local.return_value = db_session
-            
-            query = service.get_items_query()
-            results = query.all()
+        # Use the db_session directly
+        query = service.get_items_query(db_session)
+        results = query.all()
         
         assert len(results) == 2
         assert results[0].id == 2  # Default order by score desc
         assert results[1].id == 1
     
-    def test_get_items_query_with_filters(self, db_session):
+    def test_get_items_query_with_filters(self, fake_data_service, db_session):
         """Test building query with filters."""
-        service = DataService()
+        service = fake_data_service
         
         # Add test data
         items = [
@@ -235,37 +199,32 @@ class TestDataService:
             db_session.add(item)
         db_session.commit()
         
-        # Mock SessionLocal
-        with patch('app.services.data_service.SessionLocal') as mock_session_local:
-            mock_session_local.return_value = db_session
-            
-            query = service.get_items_query(
-                min_score=100,
-                keyword="Python",
-                order_by="score",
-                order_direction="desc"
-            )
-            results = query.all()
+        # Use the db_session directly
+        query = service.get_items_query(
+            db_session,
+            min_score=100,
+            keyword="Python",
+            order_by="score",
+            order_direction="desc"
+        )
+        results = query.all()
         
         assert len(results) == 1
         assert results[0].id == 3  # Only Python Guide with score >= 100
         assert results[0].title == "Python Guide"
     
-    def test_get_items_query_by_id(self, db_session):
+    def test_get_items_query_by_id(self, fake_data_service, db_session):
         """Test building query to get specific item by ID."""
-        service = DataService()
+        service = fake_data_service
         
         # Add test data
         item = HackerNewsItem(id=123, title="Specific Story", score=100, author="user1", timestamp=1640995200, type="story")
         db_session.add(item)
         db_session.commit()
         
-        # Mock SessionLocal
-        with patch('app.services.data_service.SessionLocal') as mock_session_local:
-            mock_session_local.return_value = db_session
-            
-            query = service.get_items_query(item_id=123)
-            results = query.all()
+        # Use the db_session directly
+        query = service.get_items_query(db_session, item_id=123)
+        results = query.all()
         
         assert len(results) == 1
         assert results[0].id == 123
@@ -302,15 +261,14 @@ class TestHackerNewsAPIClient:
         client = HackerNewsAPIClient()
         
         with patch('httpx.AsyncClient') as mock_client:
-            mock_client_instance = MagicMock()
+            mock_client_instance = AsyncMock()
             mock_client_instance.__aenter__.return_value = mock_client_instance
             mock_client_instance.__aexit__.return_value = None
             mock_client_instance.get.side_effect = Exception("API Error")
             mock_client.return_value = mock_client_instance
             
-            result = await client.get_top_stories()
-        
-        assert result == []
+            with pytest.raises(Exception, match="API Error"):
+                await client.get_top_stories()
     
     @pytest.mark.asyncio
     async def test_get_item_success(self):
@@ -355,7 +313,7 @@ class TestHackerNewsAPIClient:
             mock_response.json.return_value = None
             mock_response.raise_for_status.return_value = None
             
-            mock_client_instance = MagicMock()
+            mock_client_instance = AsyncMock()
             mock_client_instance.__aenter__.return_value = mock_client_instance
             mock_client_instance.__aexit__.return_value = None
             mock_client_instance.get.return_value = mock_response
@@ -371,15 +329,14 @@ class TestHackerNewsAPIClient:
         client = HackerNewsAPIClient()
         
         with patch('httpx.AsyncClient') as mock_client:
-            mock_client_instance = MagicMock()
+            mock_client_instance = AsyncMock()
             mock_client_instance.__aenter__.return_value = mock_client_instance
             mock_client_instance.__aexit__.return_value = None
             mock_client_instance.get.side_effect = Exception("API Error")
             mock_client.return_value = mock_client_instance
             
-            result = await client.get_item(123)
-        
-        assert result is None
+            with pytest.raises(Exception, match="API Error"):
+                await client.get_item(123)
     
     @pytest.mark.asyncio
     async def test_get_items_batch_success(self):

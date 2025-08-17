@@ -1,18 +1,17 @@
 version: "3.8"
 
+# Common environment variables for all services
 x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
   DATABASE_URL: sqlite:////app/data/hacker_news.db
-  HACKER_NEWS_API_BASE_URL: ${HACKER_NEWS_API_BASE_URL:-https://hacker-news.firebaseio.com/v0}
-  FETCH_INTERVAL_MINUTES: ${FETCH_INTERVAL_MINUTES:-30}
-  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
-  MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-10}
   CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
   CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+# Common volume mounts for data persistence
 x-common-volumes: &common-volumes
   - ./data:/app/data
+  - ./logs:/app/logs
 
 services:
   redis:
@@ -41,7 +40,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health/detailed"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -96,19 +95,6 @@ services:
       start_period: 40s
     profiles:
       - monitoring
-
-  # Test service for running tests in containerized environment
-  test:
-    build: .
-    container_name: hn-test
-    command: ["/bin/bash", "-c", "chmod +x run_tests.sh && ./run_tests.sh"]
-    environment: *common-env
-    volumes: *common-volumes
-    depends_on:
-      redis:
-        condition: service_healthy
-    profiles:
-      - test
 
 volumes:
   redis_data:

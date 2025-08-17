@@ -1,8 +1,6 @@
 from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
-from contextlib import contextmanager
 from .settings import settings
 from .logging import get_logger
 
@@ -13,7 +11,7 @@ engine = create_engine(
     settings.database_url,
     connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
     poolclass=StaticPool if "sqlite" in settings.database_url else None,
-    echo=False,
+    echo=True,
 )
 
 # Create SessionLocal class

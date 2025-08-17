@@ -1,7 +1,5 @@
 import pytest
-from sqlalchemy.orm import Session
-from app.models.database import HackerNewsItem
-from app.core.config.database import get_db_session, create_tables, drop_tables
+from app.models.orm import HackerNewsItem
 
 
 class TestHackerNewsItemRepository:

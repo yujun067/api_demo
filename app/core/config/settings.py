@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,13 +27,13 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    log_file_path: str = "./logs/app.log"
+    log_rotation: str = "daily"  # daily, size, or none
+    log_max_size_mb: int = 100  # Maximum file size in MB for size rotation
+    log_backup_count: int = 30  # Number of backup files to keep
 
-    # Environment Configuration
-    app_env: str = "dev"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
 # Create global settings instance

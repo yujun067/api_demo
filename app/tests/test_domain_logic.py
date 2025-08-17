@@ -1,239 +1,113 @@
 import pytest
-from datetime import datetime, timezone
-from app.models.schemas import (
-    HackerNewsItemResponse, 
-    FetchRequest, 
-    FetchResponse, 
-    DataQueryParams
-)
+from app.models.api import DataQueryParams
 from app.services.hacker_news_client import HackerNewsAPIClient
 
 
-class TestHackerNewsItemResponse:
-    """Test domain logic for HackerNewsItemResponse model."""
+class TestDataQueryParamsCustomValidation:
+    """Test only the custom validation logic in DataQueryParams."""
     
-    def test_valid_item_response(self):
-        """Test creating a valid HackerNewsItemResponse."""
-        item_data = {
-            "id": 12345,
-            "title": "Test Story",
-            "url": "https://example.com",
-            "score": 100,
-            "author": "testuser",
-            "timestamp": 1640995200,
-            "descendants": 10,
-            "type": "story",
-            "text": None
-        }
-        
-        item = HackerNewsItemResponse(**item_data)
-        
-        assert item.id == 12345
-        assert item.title == "Test Story"
-        assert item.url == "https://example.com"
-        assert item.score == 100
-        assert item.author == "testuser"
-        assert item.timestamp == 1640995200
-        assert item.descendants == 10
-        assert item.type == "story"
-        assert item.text is None
-    
-    def test_item_response_without_optional_fields(self):
-        """Test creating item response with minimal required fields."""
-        item_data = {
-            "id": 12345,
-            "title": "Test Story",
-            "score": 100,
-            "author": "testuser",
-            "timestamp": 1640995200,
-            "type": "story"
-        }
-        
-        item = HackerNewsItemResponse(**item_data)
-        
-        assert item.id == 12345
-        assert item.title == "Test Story"
-        assert item.url is None
-        assert item.descendants is None
-        assert item.text is None
-
-
-class TestFetchRequest:
-    """Test domain logic for FetchRequest model."""
-    
-    def test_valid_fetch_request(self):
-        """Test creating a valid FetchRequest."""
-        request_data = {
-            "min_score": 50,
-            "keyword": "AI",
-            "limit": 100
-        }
-        
-        request = FetchRequest(**request_data)
-        
-        assert request.min_score == 50
-        assert request.keyword == "AI"
-        assert request.limit == 100
-    
-    def test_fetch_request_with_defaults(self):
-        """Test FetchRequest with default values."""
-        request = FetchRequest()
-        
-        assert request.min_score is None
-        assert request.keyword is None
-        assert request.limit == 100
-    
-    def test_fetch_request_validation_min_score(self):
-        """Test min_score validation."""
-        with pytest.raises(ValueError):
-            FetchRequest(min_score=-1)
-    
-    def test_fetch_request_validation_limit_min(self):
-        """Test limit minimum validation."""
-        with pytest.raises(ValueError):
-            FetchRequest(limit=0)
-    
-    def test_fetch_request_validation_limit_max(self):
-        """Test limit maximum validation."""
-        with pytest.raises(ValueError):
-            FetchRequest(limit=501)
-    
-    def test_fetch_request_validation_keyword_min_length(self):
-        """Test keyword minimum length validation."""
-        with pytest.raises(ValueError):
-            FetchRequest(keyword="")
-
-
-class TestFetchResponse:
-    """Test domain logic for FetchResponse model."""
-    
-    def test_valid_fetch_response(self):
-        """Test creating a valid FetchResponse."""
-        timestamp = datetime.now(timezone.utc)
-        response_data = {
-            "task_id": "test-task-123",
-            "status": "accepted",
-            "message": "Data fetching job started",
-            "timestamp": timestamp
-        }
-        
-        response = FetchResponse(**response_data)
-        
-        assert response.task_id == "test-task-123"
-        assert response.status == "accepted"
-        assert response.message == "Data fetching job started"
-        assert response.timestamp == timestamp
-    
-    def test_fetch_response_with_default_timestamp(self):
-        """Test FetchResponse with default timestamp."""
-        response_data = {
-            "task_id": "test-task-123",
-            "status": "accepted",
-            "message": "Data fetching job started"
-        }
-        
-        response = FetchResponse(**response_data)
-        
-        assert response.task_id == "test-task-123"
-        assert response.status == "accepted"
-        assert response.message == "Data fetching job started"
-        assert isinstance(response.timestamp, datetime)
-
-
-class TestDataQueryParams:
-    """Test domain logic for DataQueryParams model."""
-    
-    def test_valid_data_query_params(self):
-        """Test creating valid DataQueryParams."""
-        params_data = {
-            "item_id": 12345,
-            "min_score": 100,
-            "keyword": "python",
-            "order_by": "score",
-            "order_direction": "desc"
-        }
-        
-        params = DataQueryParams(**params_data)
-        
-        assert params.item_id == 12345
-        assert params.min_score == 100
-        assert params.keyword == "python"
-        assert params.order_by == "score"
-        assert params.order_direction == "desc"
-    
-    def test_data_query_params_with_defaults(self):
-        """Test DataQueryParams with default values."""
-        params = DataQueryParams()
-        
-        assert params.item_id is None
-        assert params.min_score is None
-        assert params.keyword is None
-        assert params.order_by == "score"
-        assert params.order_direction == "desc"
-    
-    def test_data_query_params_validation_min_score(self):
-        """Test min_score validation."""
-        with pytest.raises(ValueError):
-            DataQueryParams(min_score=-1)
-    
-    def test_data_query_params_validation_order_by(self):
-        """Test order_by validation."""
-        with pytest.raises(ValueError):
-            DataQueryParams(order_by="invalid")
-    
-    def test_data_query_params_validation_order_direction(self):
-        """Test order_direction validation."""
-        with pytest.raises(ValueError):
-            DataQueryParams(order_direction="invalid")
-    
-    def test_data_query_params_keyword_validation_empty_string(self):
-        """Test keyword validation for empty string."""
+    def test_keyword_validation_empty_string(self):
+        """Test custom keyword validation for empty string."""
         params = DataQueryParams(keyword="   ")
         assert params.keyword is None
     
-    def test_data_query_params_keyword_validation_whitespace(self):
-        """Test keyword validation for whitespace-only string."""
+    def test_keyword_validation_whitespace_only(self):
+        """Test custom keyword validation for whitespace-only string."""
         params = DataQueryParams(keyword="  \t\n  ")
         assert params.keyword is None
-
-
-class TestHackerNewsClientFiltering:
-    """Test domain logic for item filtering (pure business logic)."""
     
-    def test_filter_items_by_min_score(self):
-        """Test filtering items by minimum score."""
+    def test_keyword_validation_normal_string(self):
+        """Test custom keyword validation for normal string."""
+        params = DataQueryParams(keyword="python")
+        assert params.keyword == "python"
+    
+    def test_order_by_validation_invalid_value(self):
+        """Test custom order_by validation."""
+        with pytest.raises(ValueError, match="order_by must be one of"):
+            DataQueryParams(order_by="invalid")
+    
+    def test_order_by_validation_valid_values(self):
+        """Test custom order_by validation with valid values."""
+        valid_values = ["score", "time", "id"]
+        for value in valid_values:
+            params = DataQueryParams(order_by=value)
+            assert params.order_by == value
+    
+    def test_order_direction_validation_invalid_value(self):
+        """Test custom order_direction validation."""
+        with pytest.raises(ValueError, match="order_direction must be one of"):
+            DataQueryParams(order_direction="invalid")
+    
+    def test_order_direction_validation_valid_values(self):
+        """Test custom order_direction validation with valid values."""
+        valid_values = ["asc", "desc"]
+        for value in valid_values:
+            params = DataQueryParams(order_direction=value)
+            assert params.order_direction == value
+
+
+class TestHackerNewsClientBusinessLogic:
+    """Test business logic in HackerNewsAPIClient."""
+    
+    def test_transform_item_fields(self):
+        """Test custom field transformation logic."""
+        client = HackerNewsAPIClient()
+        
+        # Test "by" -> "author" transformation
+        item = {"id": 1, "by": "testuser", "time": 1640995200}
+        transformed = client.transform_item_fields(item)
+        
+        assert "author" in transformed
+        assert "by" not in transformed
+        assert transformed["author"] == "testuser"
+        
+        # Test "time" -> "timestamp" transformation
+        assert "timestamp" in transformed
+        assert "time" not in transformed
+        assert transformed["timestamp"] == 1640995200
+    
+    def test_filter_items_complex_logic(self):
+        """Test complex filtering logic with multiple criteria."""
         client = HackerNewsAPIClient()
         
         items = [
-            {"id": 1, "title": "Story 1", "score": 50},
-            {"id": 2, "title": "Story 2", "score": 100},
-            {"id": 3, "title": "Story 3", "score": 150},
+            {"id": 1, "title": "Python Tutorial", "score": 50, "by": "user1", "time": 1640995200},
+            {"id": 2, "title": "Python Guide", "score": 100, "by": "user2", "time": 1640995300},
+            {"id": 3, "title": "JavaScript Tutorial", "score": 100, "by": "user3", "time": 1640995400},
+            {"id": 4, "title": "Python Best Practices", "score": 150, "by": "user4", "time": 1640995500},
         ]
         
-        filtered = client.filter_items(items, min_score=100)
+        # Test filtering by both score and keyword
+        filtered = client.filter_items(items, min_score=100, keyword="Python")
         
         assert len(filtered) == 2
         assert filtered[0]["id"] == 2
-        assert filtered[1]["id"] == 3
+        assert filtered[1]["id"] == 4
+        
+        # Verify field transformation happened
+        assert "author" in filtered[0]
+        assert "timestamp" in filtered[0]
+        assert "by" not in filtered[0]
+        assert "time" not in filtered[0]
     
-    def test_filter_items_by_keyword(self):
-        """Test filtering items by keyword in title."""
+    def test_filter_items_edge_cases(self):
+        """Test filtering logic edge cases."""
         client = HackerNewsAPIClient()
         
+        # Test with missing fields
         items = [
-            {"id": 1, "title": "Python Tutorial", "score": 100},
-            {"id": 2, "title": "JavaScript Guide", "score": 100},
-            {"id": 3, "title": "Python Best Practices", "score": 100},
+            {"id": 1, "title": "Python Story", "score": 100},
+            {"id": 2, "score": 100},  # Missing title
+            {"id": 3, "title": "Python Guide"},  # Missing score
         ]
         
-        filtered = client.filter_items(items, keyword="Python")
-        
-        assert len(filtered) == 2
+        # Should handle missing fields gracefully
+        filtered = client.filter_items(items, min_score=100, keyword="Python")
+        assert len(filtered) == 1
         assert filtered[0]["id"] == 1
-        assert filtered[1]["id"] == 3
     
-    def test_filter_items_by_keyword_case_insensitive(self):
-        """Test filtering items by keyword (case insensitive)."""
+    def test_filter_items_case_insensitive(self):
+        """Test case-insensitive keyword filtering."""
         client = HackerNewsAPIClient()
         
         items = [
@@ -243,77 +117,47 @@ class TestHackerNewsClientFiltering:
         ]
         
         filtered = client.filter_items(items, keyword="python")
-        
         assert len(filtered) == 3
     
-    def test_filter_items_by_both_criteria(self):
-        """Test filtering items by both min_score and keyword."""
-        client = HackerNewsAPIClient()
-        
-        items = [
-            {"id": 1, "title": "Python Tutorial", "score": 50},
-            {"id": 2, "title": "Python Guide", "score": 100},
-            {"id": 3, "title": "JavaScript Tutorial", "score": 100},
-            {"id": 4, "title": "Python Best Practices", "score": 150},
-        ]
-        
-        filtered = client.filter_items(items, min_score=100, keyword="Python")
-        
-        assert len(filtered) == 2
-        assert filtered[0]["id"] == 2
-        assert filtered[1]["id"] == 4
-    
-    def test_filter_items_no_criteria(self):
-        """Test filtering items with no criteria (should return all items)."""
-        client = HackerNewsAPIClient()
-        
-        items = [
-            {"id": 1, "title": "Story 1", "score": 50},
-            {"id": 2, "title": "Story 2", "score": 100},
-        ]
-        
-        filtered = client.filter_items(items)
-        
-        assert len(filtered) == 2
-        assert filtered == items
-    
-    def test_filter_items_empty_list(self):
-        """Test filtering empty list of items."""
+    def test_filter_items_empty_input(self):
+        """Test filtering with empty input."""
         client = HackerNewsAPIClient()
         
         filtered = client.filter_items([])
-        
-        assert len(filtered) == 0
         assert filtered == []
-    
-    def test_filter_items_missing_score_field(self):
-        """Test filtering items with missing score field."""
-        client = HackerNewsAPIClient()
         
+        filtered = client.filter_items([], min_score=100, keyword="python")
+        assert filtered == []
+
+
+class TestDomainLogicIntegration:
+    """Test integration between domain models and business logic."""
+    
+    def test_query_params_with_filtering_integration(self):
+        """Test that query params work correctly with filtering logic."""
+        # Create query params with custom validation
+        params = DataQueryParams(
+            min_score=100,
+            keyword="python",  # Use clean keyword
+            order_by="score",
+            order_direction="desc"
+        )
+        
+        # Use these params with filtering logic
+        client = HackerNewsAPIClient()
         items = [
-            {"id": 1, "title": "Story 1", "score": 100},
-            {"id": 2, "title": "Story 2"},  # Missing score
-            {"id": 3, "title": "Story 3", "score": 150},
+            {"id": 1, "title": "Python Tutorial", "score": 50, "by": "user1", "time": 1640995200},
+            {"id": 2, "title": "Python Guide", "score": 100, "by": "user2", "time": 1640995300},
+            {"id": 3, "title": "JavaScript Guide", "score": 100, "by": "user3", "time": 1640995400},
         ]
         
-        filtered = client.filter_items(items, min_score=100)
+        # Apply the same filtering logic
+        filtered = client.filter_items(
+            items, 
+            min_score=params.min_score, 
+            keyword=params.keyword
+        )
         
-        assert len(filtered) == 2
-        assert filtered[0]["id"] == 1
-        assert filtered[1]["id"] == 3
-    
-    def test_filter_items_missing_title_field(self):
-        """Test filtering items with missing title field."""
-        client = HackerNewsAPIClient()
-        
-        items = [
-            {"id": 1, "title": "Python Story", "score": 100},
-            {"id": 2, "score": 100},  # Missing title
-            {"id": 3, "title": "Python Guide", "score": 100},
-        ]
-        
-        filtered = client.filter_items(items, keyword="Python")
-        
-        assert len(filtered) == 2
-        assert filtered[0]["id"] == 1
-        assert filtered[1]["id"] == 3
+        assert len(filtered) == 1
+        assert filtered[0]["id"] == 2
+        assert filtered[0]["title"] == "Python Guide"

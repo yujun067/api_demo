@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Query, Depends
-from fastapi_pagination import Page
+from fastapi import APIRouter,  Depends
+from fastapi_pagination import Page, Params
 from fastapi_pagination.ext.sqlalchemy import paginate as sqlalchemy_paginate
-from typing import Optional
 
-from app.models.schemas import HackerNewsItemResponse, DataQueryParams
+from app.models.api import HackerNewsItemResponse, DataQueryParams
 
 from app.services.data_service import data_service
 from app.core.config.logging import get_logger
@@ -22,7 +21,7 @@ router = APIRouter()
     description="Get Hacker News data with filtering and pagination",
     dependencies=[Depends(get_rate_limit("data"))],
 )
-async def get_data(params: DataQueryParams = Depends(), db=Depends(get_db_session)):
+async def get_data(params: DataQueryParams = Depends(), pagination: Params = Depends(), db=Depends(get_db_session)):
     """
     Get Hacker News data with filtering and pagination.
     
@@ -42,12 +41,12 @@ async def get_data(params: DataQueryParams = Depends(), db=Depends(get_db_sessio
     logger.info(f"Data request: {params.model_dump()}")
     
     query = data_service.get_items_query(
+        db=db,
         item_id=params.item_id,
         min_score=params.min_score,
         keyword=params.keyword,
         order_by=params.order_by,
         order_direction=params.order_direction,
-        db=db,
     )
 
-    return sqlalchemy_paginate(query)
+    return sqlalchemy_paginate(query, pagination)

@@ -227,7 +227,7 @@ def get_redis_client() -> redis.Redis:
     return redis_client
 
 
-def health_check() -> bool:
+def redis_health_check() -> bool:
     """Check if Redis is healthy."""
     try:
         redis_client.ping()

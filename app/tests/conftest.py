@@ -1,25 +1,26 @@
 import pytest
-import asyncio
 import os
-from typing import Generator, AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock
+from typing import Optional
+from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Override database URL for tests
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-
 from app.main import app
 from app.core.config.database import Base, get_db_session
 from app.services.data_service import DataService
-from app.services.hacker_news_client import HackerNewsAPIClient
 from app.tasks.fetch_tasks import celery_app
 
 
 # Test database configuration
 TEST_DATABASE_URL = "sqlite:///:memory:"
+
+# Override database URL for tests
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+# Override Redis URL for tests to use memory mode
+os.environ["REDIS_URL"] = "redis://localhost:6379/1"  # Use different DB for tests
 
 # Create test engine
 test_engine = create_engine(
@@ -33,12 +34,52 @@ test_engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+@pytest.fixture(scope="session", autouse=True)
+def disable_rate_limiting():
+    """Disable rate limiting for all tests."""
+    # Mock the rate limiter to always allow requests
+    def mock_rate_limiter(*args, **kwargs):
+        def noop_dependency():
+            pass
+        return noop_dependency
+    
+    # Mock the get_rate_limit function to return a no-op dependency
+    with patch('app.core.config.rate_limit.get_rate_limit', mock_rate_limiter):
+        yield
+
+
+@pytest.fixture(scope="function")
+def mock_cache():
+    """Mock cache for individual tests."""
+    # Create a simple in-memory cache
+    cache_storage = {}
+    
+    class MockCache:
+        def get(self, key: str, namespace: str = "default"):
+            full_key = f"{namespace}:{key}"
+            return cache_storage.get(full_key)
+        
+        def set(self, key: str, value, ttl: Optional[int] = None, namespace: str = "default"):
+            full_key = f"{namespace}:{key}"
+            cache_storage[full_key] = value
+            return True
+        
+        def delete(self, key: str, namespace: str = "default"):
+            full_key = f"{namespace}:{key}"
+            if full_key in cache_storage:
+                del cache_storage[full_key]
+                return True
+            return False
+        
+        def clear(self):
+            cache_storage.clear()
+    
+    mock_cache_instance = MockCache()
+    
+    # Mock the global cache instance
+    with patch('app.core.config.cache', mock_cache_instance):
+        with patch('app.tasks.fetch_tasks.cache', mock_cache_instance):
+            yield mock_cache_instance
 
 
 @pytest.fixture(scope="function")
@@ -56,80 +97,6 @@ def db_session():
         session.close()
 
 
-@pytest.fixture(scope="function")
-def db_session_ctx():
-    """Database session context manager for tests."""
-    Base.metadata.create_all(bind=test_engine)
-    
-    def get_test_db():
-        session = TestingSessionLocal()
-        try:
-            yield session
-        finally:
-            session.close()
-    
-    return get_test_db
-
-
-@pytest.fixture
-def fake_hacker_news_client():
-    """Fake Hacker News API client for testing."""
-    client = AsyncMock(spec=HackerNewsAPIClient)
-    
-    # Mock successful responses
-    client.get_top_stories.return_value = [1, 2, 3, 4, 5]
-    client.get_item.return_value = {
-        "id": 1,
-        "title": "Test Story",
-        "url": "https://example.com",
-        "score": 100,
-        "author": "testuser",
-        "timestamp": 1640995200,
-        "descendants": 10,
-        "type": "story",
-        "text": None
-    }
-    client.get_items_batch.return_value = [
-        {
-            "id": 1,
-            "title": "Test Story 1",
-            "url": "https://example.com/1",
-            "score": 100,
-            "author": "testuser1",
-            "timestamp": 1640995200,
-            "descendants": 10,
-            "type": "story",
-            "text": None
-        },
-        {
-            "id": 2,
-            "title": "Test Story 2",
-            "url": "https://example.com/2",
-            "score": 200,
-            "author": "testuser2",
-            "timestamp": 1640995300,
-            "descendants": 20,
-            "type": "story",
-            "text": None
-        }
-    ]
-    client.filter_items.return_value = [
-        {
-            "id": 1,
-            "title": "Test Story 1",
-            "url": "https://example.com/1",
-            "score": 100,
-            "author": "testuser1",
-            "timestamp": 1640995200,
-            "descendants": 10,
-            "type": "story",
-            "text": None
-        }
-    ]
-    
-    return client
-
-
 @pytest.fixture
 def fake_data_service(db_session):
     """Fake data service for testing."""
@@ -140,7 +107,7 @@ def fake_data_service(db_session):
 
 
 @pytest.fixture
-def test_client(db_session):
+def test_client(db_session, mock_cache):
     """Test client with dependency overrides."""
     def override_get_db():
         try:
@@ -150,15 +117,6 @@ def test_client(db_session):
     
     # Override the database dependency
     app.dependency_overrides[get_db_session] = override_get_db
-    
-    # Also override the SessionLocal in data_service to use the test session
-    from app.services.data_service import SessionLocal
-    original_session_local = SessionLocal
-    
-    def test_session_local():
-        return db_session
-    
-    app.dependency_overrides[SessionLocal] = test_session_local
     
     with TestClient(app) as client:
         yield client
@@ -176,6 +134,17 @@ def celery_test_app():
         'result_backend': 'rpc://',  # Use RPC result backend
     })
     return celery_app
+
+
+@pytest.fixture
+def mock_session_local_for_tasks(db_session, monkeypatch):
+    """Mock SessionLocal for Celery tasks to use test database session."""
+    def mock_session_local():
+        return db_session
+    
+    # Mock SessionLocal in fetch_tasks module
+    monkeypatch.setattr("app.tasks.fetch_tasks.SessionLocal", mock_session_local)
+    return db_session
 
 
 @pytest.fixture
@@ -216,3 +185,6 @@ def sample_hacker_news_items():
             "text": None
         }
     ]
+
+
+

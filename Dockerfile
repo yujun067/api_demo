@@ -25,15 +25,15 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy application code
 COPY . .
 
-# Create data directory with proper permissions
-RUN mkdir -p /app/data && chmod 777 /app/data
+# Create data and logs directories with proper permissions
+RUN mkdir -p /app/data /app/logs && chmod 777 /app/data /app/logs
 
 # Expose port
 EXPOSE 8000
 
-# Health check with detailed endpoint
+# Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health/detailed || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Set entrypoint
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

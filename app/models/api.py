@@ -1,6 +1,6 @@
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator
-from datetime import datetime
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+from datetime import datetime, timezone
 
 
 class HackerNewsItemResponse(BaseModel):
@@ -17,8 +17,7 @@ class HackerNewsItemResponse(BaseModel):
     type: str = Field(..., description="Type of item (story, comment, etc.)")
     text: Optional[str] = Field(None, description="Text content for text posts")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FetchRequest(BaseModel):
@@ -28,8 +27,7 @@ class FetchRequest(BaseModel):
     keyword: Optional[str] = Field(None, min_length=1, description="Keyword filter for title")
     limit: Optional[int] = Field(100, ge=1, le=500, description="Number of items to fetch")
 
-    class Config:
-        json_schema_extra = {"example": {"min_score": 50, "keyword": "AI", "limit": 100}}
+    model_config = ConfigDict(json_schema_extra={"example": {"min_score": 50, "keyword": "AI", "limit": 100}})
 
 
 class FetchResponse(BaseModel):
@@ -38,20 +36,36 @@ class FetchResponse(BaseModel):
     task_id: str = Field(..., description="Unique task identifier")
     status: str = Field(..., description="Task status")
     message: str = Field(..., description="Status message")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Response timestamp")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Response timestamp")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "task_id": "uuid-string",
-                "status": "accepted",
-                "message": "Data fetching job started",
-                "timestamp": "2024-01-01T00:00:00Z",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "task_id": "uuid-string",
+            "status": "accepted",
+            "message": "Data fetching job started",
+            "timestamp": "2024-01-01T00:00:00Z",
         }
+    })
 
 
+class StoreItemsResponse(BaseModel):
+    """Response model for store items operation."""
+    
+    stored_count: int = Field(..., description="Number of items actually stored/updated")
+    total_items: int = Field(..., description="Total number of items processed")
+    new_items: int = Field(..., description="Number of new items created")
+    updated_items: int = Field(..., description="Number of existing items updated")
+    skipped_items: int = Field(..., description="Number of items skipped (no changes)")
 
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "stored_count": 15,
+            "total_items": 20,
+            "new_items": 10,
+            "updated_items": 5,
+            "skipped_items": 5,
+        }
+    })
 
 
 class DataQueryParams(BaseModel):
@@ -84,13 +98,12 @@ class DataQueryParams(BaseModel):
             raise ValueError("order_direction must be one of: asc, desc")
         return v
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "item_id": 12345,
-                "min_score": 100,
-                "keyword": "python",
-                "order_by": "score",
-                "order_direction": "desc",
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "item_id": 12345,
+            "min_score": 100,
+            "keyword": "python",
+            "order_by": "score",
+            "order_direction": "desc",
         }
+    })

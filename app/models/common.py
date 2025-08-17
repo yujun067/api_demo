@@ -1,5 +1,5 @@
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class StandardErrorResponse(BaseModel):
@@ -12,14 +12,13 @@ class StandardErrorResponse(BaseModel):
     path: str = Field(..., description="Request path")
     method: str = Field(..., description="HTTP method")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "error": "Resource not found",
-                "error_code": "NOT_FOUND",
-                "details": "User with ID 123 not found",
-                "timestamp": "2024-01-01T00:00:00Z",
-                "path": "/api/v1/users/123",
-                "method": "GET"
-            }
+    model_config = ConfigDict(json_schema_extra={
+        "example": {
+            "error": "Resource not found",
+            "error_code": "NOT_FOUND",
+            "details": "User with ID 123 not found",
+            "timestamp": "2024-01-01T00:00:00Z",
+            "path": "/api/v1/users/123",
+            "method": "GET"
         }
+    })

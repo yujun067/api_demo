@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Query, Depends
 
-from app.models.schemas import FetchRequest, FetchResponse
+from app.models.api import FetchRequest, FetchResponse
 
 from app.tasks.fetch_tasks import fetch_and_process_pipeline, get_task_status
 from app.core.utils import NotFoundException
@@ -35,7 +35,7 @@ async def fetch_data(request: FetchRequest = Query(...)):
     logger.info(f"Starting fetch task with params: {request.model_dump()}")
 
     # Start Celery task
-    task = fetch_and_process_pipeline.apply_async(args=[request.min_score, request.keyword, request.limit or 100])
+    task = fetch_and_process_pipeline.apply_async(args=[request.min_score, request.keyword, request.limit])
 
     logger.info(f"Fetch task {task.id} accepted and queued")
     return FetchResponse(
